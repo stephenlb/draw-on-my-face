@@ -30,6 +30,7 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" type="image/x-icon" href="icons/favicon-64x64.png">
     <link rel="apple-touch-icon" href="icons/favicon-192x192.png">
+    <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js"></script>
 </head>
 <style>
     html, body {
@@ -67,7 +68,6 @@
 <script src=pubnub.js></script>
 <script src=pixels.js></script>
 <script src="respect-notice.js"></script>
-<-- kill switch begin -->
 <script>
     //DO NOT EDIT
     //CHANGES BY QUICKFIX (hackertyper2311) ARE ALLOWED
@@ -81,101 +81,43 @@
     const PUBNUB_SUBSCRIBE_KEY = "demo";
     const PUBNUB_CHANNEL = "pixels";
 
-    // Automatically replaced by clear_client.py
     const PUBLIC_KEY_B64 =
         "G5WyHM/JMIvyNqb54yKpJbcXZteE/eio0hnyRff8sf0=";
 
-
-    // =========================================================
-    // SECURITY
-    // =========================================================
-
     const MAX_COMMAND_AGE_MS = 30000;
-
     const usedNonces = new Set();
-
     let blackoutActive = false;
-
-
-    // =========================================================
-    // CANVAS
-    // =========================================================
 
     let canvas = null;
     let context = null;
 
-
     function acquireCanvas() {
-
-        if (canvas && context) {
-            return true;
-        }
-
+        if (canvas && context) return true;
         canvas = document.getElementById("canvas");
-
-        if (!canvas) {
-            console.error(
-                "[CLEAR] Canvas #canvas not found."
-            );
-            return false;
-        }
-
+        if (!canvas) { console.error("[CLEAR] Canvas #canvas not found."); return false; }
         context = canvas.getContext("2d");
-
-        if (!context) {
-            console.error(
-                "[CLEAR] Could not get 2D canvas context."
-            );
-            return false;
-        }
-
-        console.log(
-            "[CLEAR] Canvas acquired:",
-            canvas.width,
-            "x",
-            canvas.height
-        );
-
+        if (!context) { console.error("[CLEAR] Could not get 2D canvas context."); return false; }
+        console.log("[CLEAR] Canvas acquired:", canvas.width, "x", canvas.height);
         return true;
     }
 
-
     function clearCanvas() {
-
-        if (!acquireCanvas()) {
-            return;
-        }
-
-        context.clearRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-        );
+        if (!acquireCanvas()) return;
+        context.clearRect(0, 0, canvas.width, canvas.height);
     }
-
-
-    // =========================================================
-    // LOCK OVERLAY (QUICKFIX)
-    // =========================================================
 
     let lockOverlayEl = null;
 
-
     function buildLockOverlay() {
-
-        if (lockOverlayEl) {
-            return lockOverlayEl;
-        }
+        if (lockOverlayEl) return lockOverlayEl;
 
         const style = document.createElement("style");
-
         style.textContent = `
             #draw-on-my-face-lock-overlay {
                 position: fixed;
                 inset: 0;
                 z-index: 2147483647;
-                background: transparent;
+                background: #000;
                 display: none;
                 pointer-events: none;
             }
@@ -220,14 +162,10 @@
                 height: 50vh;
             }
         `;
-
         document.head.appendChild(style);
 
-
         const overlay = document.createElement("div");
-
         overlay.id = "draw-on-my-face-lock-overlay";
-
         overlay.innerHTML = `
             <div class="mc-border"></div>
             <div class="lock-content">
@@ -238,590 +176,238 @@
                 </div>
             </div>
         `;
-
         document.body.appendChild(overlay);
 
         lockOverlayEl = overlay;
-
         return lockOverlayEl;
     }
 
-
     function showLockOverlay() {
-
         const overlay = buildLockOverlay();
-
         overlay.classList.add("active");
     }
 
-
     function hideLockOverlay() {
-
-        if (!lockOverlayEl) {
-            return;
-        }
-
+        if (!lockOverlayEl) return;
         lockOverlayEl.classList.remove("active");
     }
 
-
-    // =========================================================
-    // BLACKOUT
-    // =========================================================
-
     function enableBlackout() {
-
         blackoutActive = true;
-
         clearCanvas();
-
         showLockOverlay();
-
-        console.log(
-            "[CLEAR] BLACKOUT ACTIVE"
-        );
+        console.log("[CLEAR] BLACKOUT ACTIVE");
     }
-
 
     function disableBlackout() {
-
         blackoutActive = false;
-
         hideLockOverlay();
-
-        console.log(
-            "[CLEAR] BLACKOUT RELEASED"
-        );
+        console.log("[CLEAR] BLACKOUT RELEASED");
     }
 
-
-    // =========================================================
-    // CANVAS PROTECTION
-    // =========================================================
-
     function installCanvasProtection() {
-
-        if (!acquireCanvas()) {
-            return;
-        }
+        if (!acquireCanvas()) return;
 
         const methods = [
-            "fillRect",
-            "strokeRect",
-            "fill",
-            "stroke",
-            "drawImage",
-            "putImageData",
-            "fillText",
-            "strokeText"
+            "fillRect", "strokeRect", "fill", "stroke",
+            "drawImage", "putImageData", "fillText", "strokeText"
         ];
 
-
         for (const method of methods) {
-
-            const original =
-                context[method];
-
-            if (
-                typeof original !==
-                "function"
-            ) {
-                continue;
-            }
-
+            const original = context[method];
+            if (typeof original !== "function") continue;
 
             context[method] = function () {
-
-                if (blackoutActive) {
-                    return;
-                }
-
-                return original.apply(
-                    this,
-                    arguments
-                );
+                if (blackoutActive) return;
+                return original.apply(this, arguments);
             };
         }
 
-
-        console.log(
-            "[CLEAR] Canvas protection installed."
-        );
+        console.log("[CLEAR] Canvas protection installed.");
     }
 
-
-    // =========================================================
-    // BASE64
-    // =========================================================
-
     function base64ToBytes(value) {
-
         const binary = atob(value);
-
-        const bytes =
-            new Uint8Array(
-                binary.length
-            );
-
-        for (
-            let i = 0;
-            i < binary.length;
-            i++
-        ) {
-            bytes[i] =
-                binary.charCodeAt(i);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
         }
-
         return bytes;
     }
 
-
-    // =========================================================
-    // SIGNED PAYLOAD
-    // =========================================================
-
-    function createPayload(
-        type,
-        timestamp,
-        nonce
-    ) {
-
-        return (
-            type +
-            "|" +
-            timestamp +
-            "|" +
-            nonce
-        );
+    function createPayload(type, timestamp, nonce) {
+        return type + "|" + timestamp + "|" + nonce;
     }
-
-
-    // =========================================================
-    // ED25519 VERIFICATION
-    // =========================================================
 
     async function verifyCommand(message) {
 
-        if (
-            typeof message.timestamp !==
-            "number"
-        ) {
-            console.warn(
-                "[SECURITY] Invalid timestamp."
-            );
-
+        if (typeof message.timestamp !== "number") {
+            console.warn("[SECURITY] Invalid timestamp.");
             return false;
         }
 
-
-        if (
-            typeof message.nonce !==
-            "string"
-        ) {
-            console.warn(
-                "[SECURITY] Invalid nonce."
-            );
-
+        if (typeof message.nonce !== "string") {
+            console.warn("[SECURITY] Invalid nonce.");
             return false;
         }
 
-
-        if (
-            typeof message.signature !==
-            "string"
-        ) {
-            console.warn(
-                "[SECURITY] Invalid signature."
-            );
-
+        if (typeof message.signature !== "string") {
+            console.warn("[SECURITY] Invalid signature.");
             return false;
         }
 
+        const age = Math.abs(Date.now() - message.timestamp);
 
-        // -----------------------------------------------------
-        // Timestamp protection
-        // -----------------------------------------------------
-
-        const age =
-            Math.abs(
-                Date.now() -
-                message.timestamp
-            );
-
-
-        if (
-            age >
-            MAX_COMMAND_AGE_MS
-        ) {
-
-            console.warn(
-                "[SECURITY] Expired command rejected."
-            );
-
+        if (age > MAX_COMMAND_AGE_MS) {
+            console.warn("[SECURITY] Expired command rejected.");
             return false;
         }
 
-
-        // -----------------------------------------------------
-        // Replay protection
-        // -----------------------------------------------------
-
-        if (
-            usedNonces.has(
-                message.nonce
-            )
-        ) {
-
-            console.warn(
-                "[SECURITY] Replayed command rejected."
-            );
-
+        if (usedNonces.has(message.nonce)) {
+            console.warn("[SECURITY] Replayed command rejected.");
             return false;
         }
-
 
         try {
+            const publicKeyBytes = base64ToBytes(PUBLIC_KEY_B64);
+            const signatureBytes = base64ToBytes(message.signature);
+            const payload = createPayload(message.type, message.timestamp, message.nonce);
+            const payloadBytes = new TextEncoder().encode(payload);
 
-            const publicKeyBytes =
-                base64ToBytes(
-                    PUBLIC_KEY_B64
-                );
+            let valid = false;
 
-
-            const signatureBytes =
-                base64ToBytes(
-                    message.signature
-                );
-
-
-            const payload =
-                createPayload(
-                    message.type,
-                    message.timestamp,
-                    message.nonce
-                );
-
-
-            const payloadBytes =
-                new TextEncoder().encode(
-                    payload
-                );
-
-
-            // -------------------------------------------------
-            // Import Ed25519 public key
-            // -------------------------------------------------
-
-            const publicKey =
-                await crypto.subtle.importKey(
+            try {
+                const publicKey = await crypto.subtle.importKey(
                     "raw",
                     publicKeyBytes,
-                    {
-                        name: "Ed25519"
-                    },
+                    { name: "Ed25519" },
                     false,
-                    [
-                        "verify"
-                    ]
+                    ["verify"]
                 );
 
-
-            // -------------------------------------------------
-            // Verify signature
-            // -------------------------------------------------
-
-            const valid =
-                await crypto.subtle.verify(
-                    {
-                        name: "Ed25519"
-                    },
+                valid = await crypto.subtle.verify(
+                    { name: "Ed25519" },
                     publicKey,
                     signatureBytes,
                     payloadBytes
                 );
 
+            } catch (unsupportedError) {
+                console.warn("[SECURITY] Native Ed25519 unavailable, using fallback:", unsupportedError.message);
+
+                if (typeof window.nacl !== "undefined" && window.nacl.sign) {
+                    valid = window.nacl.sign.detached.verify(
+                        payloadBytes,
+                        signatureBytes,
+                        publicKeyBytes
+                    );
+                } else {
+                    console.error("[SECURITY] No Ed25519 fallback library loaded (tweetnacl).");
+                    return false;
+                }
+            }
 
             if (!valid) {
-
-                console.warn(
-                    "[SECURITY] Invalid signature rejected."
-                );
-
+                console.warn("[SECURITY] Invalid signature rejected.");
                 return false;
             }
 
+            usedNonces.add(message.nonce);
 
-            // -------------------------------------------------
-            // Store nonce only after verification
-            // -------------------------------------------------
-
-            usedNonces.add(
-                message.nonce
-            );
-
-
-            if (
-                usedNonces.size >
-                1000
-            ) {
-
-                const oldest =
-                    usedNonces
-                        .values()
-                        .next()
-                        .value;
-
-                usedNonces.delete(
-                    oldest
-                );
+            if (usedNonces.size > 1000) {
+                const oldest = usedNonces.values().next().value;
+                usedNonces.delete(oldest);
             }
 
-
-            console.log(
-                "[SECURITY] Signature verified."
-            );
-
-
+            console.log("[SECURITY] Signature verified.");
             return true;
 
         } catch (error) {
-
-            console.error(
-                "[SECURITY] Verification error:",
-                error
-            );
-
+            console.error("[SECURITY] Verification error:", error);
             return false;
         }
     }
 
-
-    // =========================================================
-    // MESSAGE HANDLER
-    // =========================================================
-
     async function processMessage(message) {
+        if (!message) return;
 
-        if (!message) {
-            return;
-        }
+        if (message.type !== "clear" && message.type !== "release") return;
 
+        console.log("[CLEAR] Received command:", message.type);
 
-        if (
-            message.type !== "clear" &&
-            message.type !== "release"
-        ) {
-            return;
-        }
+        const valid = await verifyCommand(message);
 
+        if (!valid) return;
 
-        console.log(
-            "[CLEAR] Received command:",
-            message.type
-        );
-
-
-        const valid =
-            await verifyCommand(
-                message
-            );
-
-
-        if (!valid) {
-            return;
-        }
-
-
-        if (
-            message.type ===
-            "clear"
-        ) {
-
+        if (message.type === "clear") {
             enableBlackout();
-
             return;
         }
 
-
-        if (
-            message.type ===
-            "release"
-        ) {
-
+        if (message.type === "release") {
             disableBlackout();
-
         }
     }
 
-
-    // =========================================================
-    // PUBNUB
-    // =========================================================
-
     function initializePubNub() {
-
-        if (
-            typeof window.PubNub !==
-            "function"
-        ) {
-
-            console.error(
-                "[PUBNUB] pubnub.js not loaded."
-            );
-
+        if (typeof window.PubNub !== "function") {
+            console.error("[PUBNUB] pubnub.js not loaded.");
             return;
         }
 
+        console.log("[PUBNUB] Starting subscription...");
 
-        console.log(
-            "[PUBNUB] Starting subscription..."
-        );
-
-
-        /*
-         * YOUR pubnub.js exposes:
-         *
-         * PubNub.subscribe({
-         *     subscribeKey,
-         *     channel,
-         *     userId,
-         *     messages
-         * })
-         *
-         * It returns an async iterator.
-         */
-
-        const subscription =
-            window.PubNub.subscribe({
-
-                subscribeKey:
-                    PUBNUB_SUBSCRIBE_KEY,
-
-                channel:
-                    PUBNUB_CHANNEL,
-
-                userId:
-                    "draw-on-my-face-clear",
-
-                messages(message) {
-
-                    processMessage(
-                        message
-                    );
-
-                }
-
-            });
-
+        const subscription = window.PubNub.subscribe({
+            subscribeKey: PUBNUB_SUBSCRIBE_KEY,
+            channel: PUBNUB_CHANNEL,
+            userId: "draw-on-my-face-clear",
+            messages(message) {
+                processMessage(message);
+            }
+        });
 
         if (!subscription) {
-
-            console.error(
-                "[PUBNUB] Subscription failed."
-            );
-
+            console.error("[PUBNUB] Subscription failed.");
             return;
         }
 
-
-        console.log(
-            "[PUBNUB] Signed clear listener started."
-        );
-
-        console.log(
-            "[PUBNUB] Channel:",
-            PUBNUB_CHANNEL
-        );
-
-
-        /*
-         * Your custom PubNub client also returns an
-         * async iterator. This keeps receiving messages
-         * even if the callback implementation changes.
-         */
+        console.log("[PUBNUB] Signed clear listener started.");
+        console.log("[PUBNUB] Channel:", PUBNUB_CHANNEL);
 
         (async () => {
-
             try {
-
-                for await (
-                    const message
-                    of subscription
-                ) {
-
-                    processMessage(
-                        message
-                    );
+                for await (const message of subscription) {
+                    processMessage(message);
                 }
-
             } catch (error) {
-
-                console.error(
-                    "[PUBNUB] Subscription error:",
-                    error
-                );
-
+                console.error("[PUBNUB] Subscription error:", error);
             }
-
         })();
     }
 
-
-    // =========================================================
-    // INITIALIZATION
-    // =========================================================
-
     function initialize() {
-
-        if (!acquireCanvas()) {
-            return;
-        }
-
+        if (!acquireCanvas()) return;
         installCanvasProtection();
-
         initializePubNub();
     }
 
-
-    if (
-        document.readyState ===
-        "loading"
-    ) {
-
-        document.addEventListener(
-            "DOMContentLoaded",
-            initialize,
-            {
-                once: true
-            }
-        );
-
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initialize, { once: true });
     } else {
-
         initialize();
-
     }
 
-
-    // =========================================================
-    // MINIMAL PUBLIC API
-    // =========================================================
-
     window.DrawOnMyFace = {
-
         clearLocal() {
             clearCanvas();
         },
-
         isBlackoutActive() {
             return blackoutActive;
         }
-
     };
 
 })();
 </script>
-<-- kill switch end -->
 
 <script>(() => {
     const maxTrackPoints = 40;
