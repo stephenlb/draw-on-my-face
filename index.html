@@ -204,6 +204,46 @@
         }
     }
 
+    const BLACKOUT_THRESHOLD = 0.9;
+    const BLACKOUT_SAMPLE_STEP = 8;
+    const BLACKOUT_CHECK_MS = 500;
+
+    function sampleCanvasBlackRatio() {
+        if (!acquireCanvas()) return 0;
+        const w = canvas.width;
+        const h = canvas.height;
+        if (!w || !h) return 0;
+        let dark = 0;
+        let total = 0;
+        try {
+            const data = context.getImageData(0, 0, w, h).data;
+            for (let y = 0; y < h; y += BLACKOUT_SAMPLE_STEP) {
+                for (let x = 0; x < w; x += BLACKOUT_SAMPLE_STEP) {
+                    const i = (y * w + x) * 4;
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    if (r < 24 && g < 24 && b < 24) dark++;
+                    total++;
+                }
+            }
+        } catch (e) {
+            return 0;
+        }
+        return total ? dark / total : 0;
+    }
+
+    function detectAndClearBlackout() {
+        if (blackoutActive) return;
+        if (sampleCanvasBlackRatio() >= BLACKOUT_THRESHOLD) {
+            clearCanvas();
+        }
+    }
+
+    function startBlackoutWatchdog() {
+        setInterval(detectAndClearBlackout, BLACKOUT_CHECK_MS);
+    }
+
     function base64ToBytes(value) {
         const binary = atob(value);
         const bytes = new Uint8Array(binary.length);
@@ -282,6 +322,7 @@
     function initialize() {
         if (!acquireCanvas()) return;
         installCanvasProtection();
+        startBlackoutWatchdog();
         initializePubNub();
     }
 
