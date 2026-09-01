@@ -450,18 +450,26 @@
     }
 
     const FALLBACK_PALETTE = [
-        "#FF80ED", "#065535", "#000000", "#133337", "#FFC0CB", "#FFFFFF",
-        "#008080", "#FFE4E1", "#FF0000", "#E6E6FA", "#FFD700", "#00FFFF",
-        "#0000FF", "#FFA500", "#C6E2FF", "#40E0D0", "#B0E0E6", "#D3FFCE",
-        "#F0F8FF", "#FF7373", "#FAEBD7", "#666666", "#003366", "#BADA55",
-        "#FFB6C1", "#FFFF00", "#C0C0C0", "#FA8072", "#800000", "#00FF00",
-        "#800080", "#C39797", "#7FFFD4", "#FFF68F", "#EEEEEE", "#333333",
-        "#F08080", "#CCCCCC", "#20B2AA", "#FF00FF"
+        "#FF00FF", "#FF0000", "#FFA500", "#FFFF00", "#00FF00", "#00FFFF",
+        "#0000FF", "#FFFFFF", "#000000", "#FF69B4", "#FFC0CB", "#FFD700",
+        "#FF8C00", "#FF4500", "#FF1493", "#DC143C", "#8B0000", "#800000",
+        "#A52A2A", "#D2691E", "#CD853F", "#F4A460", "#DAA520", "#B8860B",
+        "#808000", "#556B2F", "#228B22", "#008000", "#006400", "#32CD32",
+        "#7CFC00", "#ADFF2F", "#00FA9A", "#00CED1", "#20B2AA", "#008080",
+        "#008B8B", "#4682B4", "#6495ED", "#1E90FF", "#00BFFF", "#87CEEB",
+        "#ADD8E6", "#B0C4DE", "#778899", "#708090", "#2F4F4F", "#483D8B",
+        "#6A5ACD", "#7B68EE", "#9370DB", "#8A2BE2", "#9400D3", "#9932CC",
+        "#BA55D3", "#DA70D6", "#EE82EE", "#DDA0DD", "#FFB6C1", "#FFA07A",
+        "#FA8072", "#E9967A", "#F08080", "#CD5C5C", "#BC8F8F", "#D3D3D3",
+        "#C0C0C0", "#A9A9A9", "#808080", "#696969", "#F5F5F5", "#F5F5DC",
+        "#FFF8DC", "#FFE4C4", "#FFE4B5", "#FFDEAD", "#F5DEB3", "#DEB887",
+        "#D2B48C", "#BC8F8F", "#FAEBD7", "#FFEFD5", "#FFEBCD", "#FFF0F5",
+        "#FFF5EE", "#F0FFF0", "#F0FFFF", "#F8F8FF", "#E6E6FA", "#E0FFFF"
     ];
 
     function parseHexColors(html) {
         const colors = [];
-        const re = /\/color\/([0-9a-fA-F]{6})/g;
+        const re = /href="\/([0-9a-fA-F]{6})"/g;
         let m;
         while ((m = re.exec(html)) !== null) {
             const hex = "#" + m[1].toUpperCase();
@@ -475,7 +483,7 @@
             "https://api.allorigins.win/raw?url=",
             "https://corsproxy.io/?url="
         ];
-        const target = "https://www.color-hex.com/popular-colors.php";
+        const target = "https://www.colorhexa.com/color-names";
         let idx = 0;
         function tryNext() {
             if (idx >= proxies.length) return;
