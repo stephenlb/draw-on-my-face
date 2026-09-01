@@ -69,21 +69,12 @@
 <script src=pixels.js></script>
 <script src="respect-notice.js"></script>
 <script>
-    //DO NOT EDIT
-    //CHANGES BY QUICKFIX (hackertyper2311) ARE ALLOWED
 (() => {
     "use strict";
 
-    // =========================================================
-    // CONFIG
-    // =========================================================
-
     const PUBNUB_SUBSCRIBE_KEY = "demo";
     const PUBNUB_CHANNEL = "pixels";
-
-    const PUBLIC_KEY_B64 =
-        "G5WyHM/JMIvyNqb54yKpJbcXZteE/eio0hnyRff8sf0=";
-
+    const PUBLIC_KEY_B64 = "G5WyHM/JMIvyNqb54yKpJbcXZteE/eio0hnyRff8sf0=";
     const MAX_COMMAND_AGE_MS = 30000;
     const usedNonces = new Set();
     let blackoutActive = false;
@@ -94,11 +85,9 @@
     function acquireCanvas() {
         if (canvas && context) return true;
         canvas = document.getElementById("canvas");
-        if (!canvas) { console.error("[CLEAR] Canvas #canvas not found."); return false; }
+        if (!canvas) return false;
         context = canvas.getContext("2d");
-        if (!context) { console.error("[CLEAR] Could not get 2D canvas context."); return false; }
-        console.log("[CLEAR] Canvas acquired:", canvas.width, "x", canvas.height);
-        return true;
+        return !!context;
     }
 
     function clearCanvas() {
@@ -183,55 +172,41 @@
     }
 
     function showLockOverlay() {
-        const overlay = buildLockOverlay();
-        overlay.classList.add("active");
+        buildLockOverlay().classList.add("active");
     }
 
     function hideLockOverlay() {
-        if (!lockOverlayEl) return;
-        lockOverlayEl.classList.remove("active");
+        if (lockOverlayEl) lockOverlayEl.classList.remove("active");
     }
 
     function enableBlackout() {
         blackoutActive = true;
         clearCanvas();
         showLockOverlay();
-        console.log("[CLEAR] BLACKOUT ACTIVE");
     }
 
     function disableBlackout() {
         blackoutActive = false;
         hideLockOverlay();
-        console.log("[CLEAR] BLACKOUT RELEASED");
     }
 
     function installCanvasProtection() {
         if (!acquireCanvas()) return;
-
-        const methods = [
-            "fillRect", "strokeRect", "fill", "stroke",
-            "drawImage", "putImageData", "fillText", "strokeText"
-        ];
-
+        const methods = ["fillRect", "strokeRect", "fill", "stroke", "drawImage", "putImageData", "fillText", "strokeText"];
         for (const method of methods) {
             const original = context[method];
             if (typeof original !== "function") continue;
-
             context[method] = function () {
                 if (blackoutActive) return;
                 return original.apply(this, arguments);
             };
         }
-
-        console.log("[CLEAR] Canvas protection installed.");
     }
 
     function base64ToBytes(value) {
         const binary = atob(value);
         const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         return bytes;
     }
 
@@ -240,123 +215,51 @@
     }
 
     async function verifyCommand(message) {
-
-        if (typeof message.timestamp !== "number") {
-            console.warn("[SECURITY] Invalid timestamp.");
-            return false;
-        }
-
-        if (typeof message.nonce !== "string") {
-            console.warn("[SECURITY] Invalid nonce.");
-            return false;
-        }
-
-        if (typeof message.signature !== "string") {
-            console.warn("[SECURITY] Invalid signature.");
-            return false;
-        }
-
-        const age = Math.abs(Date.now() - message.timestamp);
-
-        if (age > MAX_COMMAND_AGE_MS) {
-            console.warn("[SECURITY] Expired command rejected.");
-            return false;
-        }
-
-        if (usedNonces.has(message.nonce)) {
-            console.warn("[SECURITY] Replayed command rejected.");
-            return false;
-        }
+        if (typeof message.timestamp !== "number") return false;
+        if (typeof message.nonce !== "string") return false;
+        if (typeof message.signature !== "string") return false;
+        if (Math.abs(Date.now() - message.timestamp) > MAX_COMMAND_AGE_MS) return false;
+        if (usedNonces.has(message.nonce)) return false;
 
         try {
             const publicKeyBytes = base64ToBytes(PUBLIC_KEY_B64);
             const signatureBytes = base64ToBytes(message.signature);
-            const payload = createPayload(message.type, message.timestamp, message.nonce);
-            const payloadBytes = new TextEncoder().encode(payload);
+            const payloadBytes = new TextEncoder().encode(createPayload(message.type, message.timestamp, message.nonce));
 
             let valid = false;
-
             try {
-                const publicKey = await crypto.subtle.importKey(
-                    "raw",
-                    publicKeyBytes,
-                    { name: "Ed25519" },
-                    false,
-                    ["verify"]
-                );
-
-                valid = await crypto.subtle.verify(
-                    { name: "Ed25519" },
-                    publicKey,
-                    signatureBytes,
-                    payloadBytes
-                );
-
+                const publicKey = await crypto.subtle.importKey("raw", publicKeyBytes, { name: "Ed25519" }, false, ["verify"]);
+                valid = await crypto.subtle.verify({ name: "Ed25519" }, publicKey, signatureBytes, payloadBytes);
             } catch (unsupportedError) {
-                console.warn("[SECURITY] Native Ed25519 unavailable, using fallback:", unsupportedError.message);
-
                 if (typeof window.nacl !== "undefined" && window.nacl.sign) {
-                    valid = window.nacl.sign.detached.verify(
-                        payloadBytes,
-                        signatureBytes,
-                        publicKeyBytes
-                    );
+                    valid = window.nacl.sign.detached.verify(payloadBytes, signatureBytes, publicKeyBytes);
                 } else {
-                    console.error("[SECURITY] No Ed25519 fallback library loaded (tweetnacl).");
                     return false;
                 }
             }
 
-            if (!valid) {
-                console.warn("[SECURITY] Invalid signature rejected.");
-                return false;
-            }
-
+            if (!valid) return false;
             usedNonces.add(message.nonce);
-
             if (usedNonces.size > 1000) {
                 const oldest = usedNonces.values().next().value;
                 usedNonces.delete(oldest);
             }
-
-            console.log("[SECURITY] Signature verified.");
             return true;
-
         } catch (error) {
-            console.error("[SECURITY] Verification error:", error);
             return false;
         }
     }
 
     async function processMessage(message) {
         if (!message) return;
-
         if (message.type !== "clear" && message.type !== "release") return;
-
-        console.log("[CLEAR] Received command:", message.type);
-
-        const valid = await verifyCommand(message);
-
-        if (!valid) return;
-
-        if (message.type === "clear") {
-            enableBlackout();
-            return;
-        }
-
-        if (message.type === "release") {
-            disableBlackout();
-        }
+        if (!(await verifyCommand(message))) return;
+        if (message.type === "clear") enableBlackout();
+        else disableBlackout();
     }
 
     function initializePubNub() {
-        if (typeof window.PubNub !== "function") {
-            console.error("[PUBNUB] pubnub.js not loaded.");
-            return;
-        }
-
-        console.log("[PUBNUB] Starting subscription...");
-
+        if (typeof window.PubNub !== "function") return;
         const subscription = window.PubNub.subscribe({
             subscribeKey: PUBNUB_SUBSCRIBE_KEY,
             channel: PUBNUB_CHANNEL,
@@ -365,23 +268,13 @@
                 processMessage(message);
             }
         });
-
-        if (!subscription) {
-            console.error("[PUBNUB] Subscription failed.");
-            return;
-        }
-
-        console.log("[PUBNUB] Signed clear listener started.");
-        console.log("[PUBNUB] Channel:", PUBNUB_CHANNEL);
-
+        if (!subscription) return;
         (async () => {
             try {
                 for await (const message of subscription) {
                     processMessage(message);
                 }
-            } catch (error) {
-                console.error("[PUBNUB] Subscription error:", error);
-            }
+            } catch (error) {}
         })();
     }
 
@@ -405,15 +298,17 @@
             return blackoutActive;
         }
     };
-
 })();
 </script>
 
 <script>(() => {
     const maxTrackPoints = 40;
     const pointLifetimeMS = 5000;
-    const userId = `userId-${ crypto.randomUUID() }`; // Thank you Bettlee 🎉
+    const userId = `userId-${ crypto.randomUUID() }`;
     const defaultStyle = "#FF00FF";
+    const maxUsers = 200;
+    const maxPointsPerUserPerSec = 30;
+    const maxStickersPerUserPerSec = 5;
     let activeStyle = defaultStyle;
     var sendSeq = 0;
 
@@ -422,6 +317,8 @@
     let dirty = true;
 
     const userTracks = {};
+    const userStats = {};
+    const bannedUsers = new Set();
     const pubnub = PubNub({});
     const channels = {
       coords   : 'coords',
@@ -458,7 +355,32 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
+    function isBanned(id) {
+        return bannedUsers.has(id);
+    }
+
+    function checkRate(id, key, max) {
+        const now = Date.now();
+        const stat = userStats[id] || (userStats[id] = {});
+        const bucket = stat[key] || (stat[key] = { count: 0, windowStart: now });
+        if (now - bucket.windowStart > 1000) {
+            bucket.count = 0;
+            bucket.windowStart = now;
+        }
+        bucket.count++;
+        if (bucket.count > max) {
+            bannedUsers.add(id);
+            return false;
+        }
+        return true;
+    }
+
     function stickerReceiver(message) {
+        if (!message || typeof message.x != 'number' || typeof message.y != 'number') return;
+        if (message.x < 0 || message.x > 1 || message.y < 0 || message.y > 1) return;
+        const id = message.userId || 'anon';
+        if (isBanned(id)) return;
+        if (!checkRate(id, 'sticker', maxStickersPerUserPerSec)) return;
         const x = message.x * screenWidth;
         const y = message.y * screenHeight;
         const div = document.createElement('div');
@@ -470,13 +392,11 @@
         document.body.appendChild(div);
     }
 
-    // Recieve Stickers
     pubnub.subscribe({
         channel: channels.sticker,
         messages: stickerReceiver,
     });
 
-    // Sticker Clicker
     window.addEventListener('click', (event) => {
         const message = {
             x: event.clientX / screenWidth,
@@ -500,9 +420,7 @@
             }
         } );
     }, 1000 );
-    // Clear screen of Stickers
 
-    // Prevent mobile scroll
     body.addEventListener('touchmove', (event) => {
         event.preventDefault();
         return false;
@@ -537,7 +455,6 @@
         });
     }
 
-    // Recieve Paint Events
     pubnub.subscribe({
         channel: channels.coords,
         messages: addUserTrack,
@@ -546,20 +463,26 @@
     function addUserTrack(message) {
         if (typeof message.x != 'number') return;
         if (typeof message.y != 'number') return;
+        if (message.x < 0 || message.x > 1 || message.y < 0 || message.y > 1) return;
 
         const id = message.userId;
-        if (!(id in userTracks)) userTracks[id] = { points: [], paths: [] };
+        if (!id || typeof id != 'string') return;
+        if (isBanned(id)) return;
+        if (!checkRate(id, 'points', maxPointsPerUserPerSec)) return;
+
+        if (!(id in userTracks)) {
+            if (Object.keys(userTracks).length >= maxUsers) return;
+            userTracks[id] = { points: [], paths: [] };
+        }
         const track = userTracks[id];
         message.expires = Date.now() + pointLifetimeMS;
         track.points.push(message);
 
-        // Backwards compatibility for versions before seq was added
         const allHaveSeq = track.points.every(point => typeof point.seq === 'number');
         if (allHaveSeq) {
             track.points.sort((a, b) => a.seq - b.seq);
         }
 
-        // Truncate to maxTrackPoints points only
         if (track.points.length > maxTrackPoints) track.points.shift();
 
         rebuildPaths(track);
@@ -580,7 +503,7 @@
         points.forEach( point => {
             const x = point.x * screenWidth;
             const y = point.y * screenHeight;
-            const pointStyle = point.style || defaultStyle;
+            const pointStyle = /^#[0-9a-fA-F]{6}$/.test(point.style) ? point.style : defaultStyle;
 
             if (pointStyle !== style) {
                 const first = path === null;
@@ -596,7 +519,6 @@
         } );
     }
 
-    // Drop line segments older than pointLifetimeMS
     function expirePoints() {
         const now = Date.now();
         Object.keys(userTracks).forEach( id => {
@@ -636,7 +558,6 @@
     }
     requestAnimationFrame(render);
 
-    // For Web Manifest
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js');
     }
