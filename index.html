@@ -64,8 +64,68 @@
         font-size: 40px;
         z-index: 100;
     }
+    #colorPicker {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 24px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+    #colorPicker .swatch {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.6);
+        cursor: pointer;
+        box-sizing: border-box;
+    }
+    #colorPicker .swatch.active {
+        border-color: #fff;
+        transform: scale(1.15);
+    }
+    #colorPicker input[type="color"] {
+        width: 32px;
+        height: 32px;
+        border: none;
+        padding: 0;
+        background: none;
+        cursor: pointer;
+    }
+    #colorPicker input[type="text"] {
+        width: 70px;
+        padding: 4px 6px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        font-size: 12px;
+        text-align: center;
+    }
+    body.overlay #colorPicker {
+        display: none;
+    }
 </style>
 <canvas id=canvas></canvas>
+<div id="colorPicker">
+    <div class="swatch" data-color="#FF00FF" title="#FF00FF"></div>
+    <div class="swatch" data-color="#FF0000" title="#FF0000"></div>
+    <div class="swatch" data-color="#FFA500" title="#FFA500"></div>
+    <div class="swatch" data-color="#FFFF00" title="#FFFF00"></div>
+    <div class="swatch" data-color="#00FF00" title="#00FF00"></div>
+    <div class="swatch" data-color="#00FFFF" title="#00FFFF"></div>
+    <div class="swatch" data-color="#0000FF" title="#0000FF"></div>
+    <div class="swatch" data-color="#FFFFFF" title="#FFFFFF"></div>
+    <div class="swatch" data-color="#000000" title="#000000"></div>
+    <input type="color" id="customColor" value="#FF00FF" title="Custom color">
+    <input type="text" id="hexInput" value="#FF00FF" maxlength="7" title="Hex color">
+</div>
 <script src=pubnub.js></script>
 <script src=pixels.js></script>
 <script src="respect-notice.js"></script>
@@ -383,10 +443,41 @@
 
     if (isOverlayMode) {
         body.style.backgroundColor = 'transparent';
+        body.classList.add('overlay');
     }
 
     function setColor(hex) {
         activeStyle = hex;
+    }
+
+    function initColorPicker() {
+        if (isOverlayMode) return;
+        const picker = document.getElementById('colorPicker');
+        if (!picker) return;
+        const swatches = picker.querySelectorAll('.swatch');
+        const customColor = document.getElementById('customColor');
+        const hexInput = document.getElementById('hexInput');
+
+        function applyColor(hex) {
+            if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+            setColor(hex);
+            customColor.value = hex;
+            hexInput.value = hex.toUpperCase();
+            swatches.forEach(s => s.classList.toggle('active', s.dataset.color.toLowerCase() === hex.toLowerCase()));
+        }
+
+        swatches.forEach(swatch => {
+            swatch.style.background = swatch.dataset.color;
+            swatch.addEventListener('click', () => applyColor(swatch.dataset.color));
+        });
+
+        customColor.addEventListener('input', () => applyColor(customColor.value));
+        hexInput.addEventListener('change', () => applyColor(hexInput.value));
+        hexInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyColor(hexInput.value);
+        });
+
+        applyColor(defaultStyle);
     }
 
     function resizeCanvas() {
@@ -402,6 +493,7 @@
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+    initColorPicker();
 
     function isBanned(id) {
         const until = bannedUsers.get(id);
