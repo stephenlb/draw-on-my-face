@@ -7,6 +7,8 @@
   const MAX_COMMAND_AGE_MS = 30 * 1000;
   const MAX_PIXELS_PER_BATCH = 500;
   const MAX_LIVE_PIXELS = 150000;
+  const MAX_PIXELS_PER_USER_PER_SEC = 200;
+  const MAX_PIXEL_SIZE = 0.1;
   const usedNonces = new Set();
 
   let pubnub = null;
@@ -16,6 +18,7 @@
   let livePixels = [];
   let pendingPixels = [];
   let pixelSeq = 0;
+  const userPixelStats = {};
 
   function acquireCanvas() {
     if (canvas && context) return true;
@@ -64,18 +67,26 @@
   function handlePixelBatch(message) {
     if (!Array.isArray(message.pixels)) return;
     const now = Date.now();
-    const defaultSize = typeof message.size === "number" ? message.size : 0.008;
+    const defaultSize = typeof message.size === "number" ? Math.min(message.size, MAX_PIXEL_SIZE) : 0.008;
     const lifetimeMs = typeof message.fadeMs === "number" ? message.fadeMs : 150000;
+    const id = message.userId || "anon";
+    const stat = userPixelStats[id] || (userPixelStats[id] = { count: 0, windowStart: now });
+    if (now - stat.windowStart > 1000) {
+      stat.count = 0;
+      stat.windowStart = now;
+    }
     const batch = message.pixels.slice(0, MAX_PIXELS_PER_BATCH);
     batch.forEach((p) => {
       if (typeof p.x !== "number" || typeof p.y !== "number") return;
       if (p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return;
       if (typeof p.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(p.color)) return;
+      if (stat.count >= MAX_PIXELS_PER_USER_PER_SEC) return;
+      stat.count++;
       livePixels.push({
         x: p.x,
         y: p.y,
         color: p.color,
-        size: typeof p.size === "number" ? p.size : defaultSize,
+        size: typeof p.size === "number" ? Math.min(p.size, MAX_PIXEL_SIZE) : defaultSize,
         expiresAt: now + lifetimeMs
       });
     });
@@ -111,6 +122,13 @@
   }
 
   setInterval(flushPixels, 190);
+
+  setInterval(() => {
+    const now = Date.now();
+    Object.keys(userPixelStats).forEach(id => {
+      if (now - userPixelStats[id].windowStart > 30000) delete userPixelStats[id];
+    });
+  }, 30000);
 
   const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = function(callback) {

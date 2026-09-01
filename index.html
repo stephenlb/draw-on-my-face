@@ -309,6 +309,10 @@
     const maxUsers = 200;
     const maxPointsPerUserPerSec = 30;
     const maxStickersPerUserPerSec = 5;
+    const maxGlobalPointsPerSec = 300;
+    const maxAnonStickersPerSec = 10;
+    const banDurationMS = 10000;
+    const statsCleanupMS = 30000;
     let activeStyle = defaultStyle;
     var sendSeq = 0;
 
@@ -318,7 +322,9 @@
 
     const userTracks = {};
     const userStats = {};
-    const bannedUsers = new Set();
+    const bannedUsers = new Map();
+    const globalPointBucket = { count: 0, windowStart: Date.now() };
+    const anonStickerBucket = { count: 0, windowStart: Date.now() };
     const pubnub = PubNub({});
     const channels = {
       coords   : 'coords',
@@ -356,7 +362,13 @@
     resizeCanvas();
 
     function isBanned(id) {
-        return bannedUsers.has(id);
+        const until = bannedUsers.get(id);
+        if (!until) return false;
+        if (Date.now() > until) {
+            bannedUsers.delete(id);
+            return false;
+        }
+        return true;
     }
 
     function checkRate(id, key, max) {
@@ -369,18 +381,46 @@
         }
         bucket.count++;
         if (bucket.count > max) {
-            bannedUsers.add(id);
+            bannedUsers.set(id, now + banDurationMS);
             return false;
         }
         return true;
     }
+
+    function checkGlobalRate(bucket, max) {
+        const now = Date.now();
+        if (now - bucket.windowStart > 1000) {
+            bucket.count = 0;
+            bucket.windowStart = now;
+        }
+        bucket.count++;
+        return bucket.count <= max;
+    }
+
+    function cleanupStats() {
+        const now = Date.now();
+        Object.keys(userStats).forEach(id => {
+            const stat = userStats[id];
+            const stale = Object.keys(stat).every(key => now - stat[key].windowStart > statsCleanupMS);
+            if (stale) delete userStats[id];
+        });
+        bannedUsers.forEach((until, id) => {
+            if (now > until) bannedUsers.delete(id);
+        });
+    }
+
+    setInterval(cleanupStats, statsCleanupMS);
 
     function stickerReceiver(message) {
         if (!message || typeof message.x != 'number' || typeof message.y != 'number') return;
         if (message.x < 0 || message.x > 1 || message.y < 0 || message.y > 1) return;
         const id = message.userId || 'anon';
         if (isBanned(id)) return;
-        if (!checkRate(id, 'sticker', maxStickersPerUserPerSec)) return;
+        if (id === 'anon') {
+            if (!checkGlobalRate(anonStickerBucket, maxAnonStickersPerSec)) return;
+        } else if (!checkRate(id, 'sticker', maxStickersPerUserPerSec)) {
+            return;
+        }
         const x = message.x * screenWidth;
         const y = message.y * screenHeight;
         const div = document.createElement('div');
@@ -468,6 +508,7 @@
         const id = message.userId;
         if (!id || typeof id != 'string') return;
         if (isBanned(id)) return;
+        if (!checkGlobalRate(globalPointBucket, maxGlobalPointsPerSec)) return;
         if (!checkRate(id, 'points', maxPointsPerUserPerSec)) return;
 
         if (!(id in userTracks)) {
@@ -527,6 +568,10 @@
             while (track.points.length && track.points[0].expires <= now) {
                 track.points.shift();
                 expired = true;
+            }
+            if (track.points.length === 0) {
+                delete userTracks[id];
+                return;
             }
             if (!expired) return;
             rebuildPaths(track);
