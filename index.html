@@ -520,6 +520,30 @@
         });
     }
 
+    // Secret URL: change the canvas color for everyone on the shared canvas.
+    // Usage: ?secret=YOUR_SECRET&color=%23ff0000
+    const SECRET_URL_KEY = 'domf-secret';
+    const secretParam = urlParams.get('secret');
+    const colorParam = urlParams.get('color');
+    if (secretParam === SECRET_URL_KEY && colorParam && /^#[0-9a-fA-F]{6}$/.test(colorParam)) {
+        activeStyle = colorParam;
+        colorToggle.style.background = colorParam;
+        pubnub.publish({
+            channel: channels.commands,
+            message: { type: 'setColor', color: colorParam },
+        });
+    }
+
+    pubnub.subscribe({
+        channel: channels.commands,
+        messages: (message) => {
+            if (message && message.type === 'setColor' && typeof message.color === 'string') {
+                activeStyle = message.color;
+                colorToggle.style.background = message.color;
+            }
+        },
+    });
+
     function resizeCanvas() {
       screenWidth = window.innerWidth;
       screenHeight = window.innerHeight;
@@ -591,6 +615,7 @@
         pendingPoint = {
             x: event.clientX / screenWidth,
             y: event.clientY / screenHeight,
+            style: activeStyle,
         };
         return false;
     });
@@ -603,7 +628,7 @@
             x: pendingPoint.x,
             y: pendingPoint.y,
             userId: userId,
-            style: activeStyle,
+            style: pendingPoint.style,
             seq: sendSeq,
         };
         pendingPoint = null;
