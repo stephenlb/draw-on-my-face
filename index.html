@@ -502,9 +502,17 @@
 
     colorToggle.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (typeof COLORS === 'undefined') return;
         colorPicker.classList.toggle('open');
     });
     colorPicker.addEventListener('click', (event) => event.stopPropagation());
+    colorPicker.addEventListener('touchmove', (event) => event.stopPropagation(), { passive: true });
+    document.addEventListener('click', (event) => {
+        if (colorPicker.classList.contains('open') &&
+            !(event.target.closest && event.target.closest('#color-picker, #color-toggle'))) {
+            colorPicker.classList.remove('open');
+        }
+    });
     if (typeof COLORS !== 'undefined') {
         COLORS.forEach(([name, hex]) => {
             const swatch = document.createElement('div');
@@ -587,7 +595,10 @@
     let pendingPoint = null;
     window.addEventListener('pointermove', (event) => {
         event.preventDefault();
-        if (event.target.closest && event.target.closest('#color-picker, #color-toggle')) return false;
+        if (event.target.closest && event.target.closest('#color-picker, #color-toggle')) {
+            pendingPoint = null;
+            return false;
+        }
         pendingPoint = {
             x: event.clientX / screenWidth,
             y: event.clientY / screenHeight,
