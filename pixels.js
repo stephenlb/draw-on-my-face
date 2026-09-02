@@ -30,15 +30,14 @@
    * clear_client.py automatically replaces this value with
    * your configured PubNub Subscribe Key.
    */
-  const _d = (s) => atob(s.split('').reverse().join(''));
   const PUBNUB_SUBSCRIBE_KEY =
-    _d("==wbtVGZ");
+    "demo";
 
   /*
    * Draw On My Face channel.
    */
   const PUBNUB_CHANNEL =
-    _d("zxWZ4lGc");
+    "pixels";
 
   /*
    * Ed25519 PUBLIC KEY.
@@ -48,7 +47,7 @@
    * NEVER put the private key in this file.
    */
   const PUBLIC_KEY_B64 =
-    _d("=0zb34EU5JFUTRUViZlRC5kcBFkNzhTWyZUQaJWMq1EOCJzTEVEW4l2TrIke");
+    "zB+OixXEDO2B8Mj1bZAFrY8s6AArNBFVbUDSPRyPN7o=";
 
 
   // ============================================================
@@ -64,6 +63,8 @@
   const MAX_COMMAND_AGE_MS =
     30 * 1000;
 
+  const MODERATION_CLEAR_COOLDOWN_MS =
+    5 * 1000;
 
   /*
    * Nonces already processed by this page.
@@ -89,6 +90,8 @@
   let pendingPixels = [];
 
   let pixelSeq = 0;
+
+  let lastModerationClear = 0;
 
 
   // ============================================================
@@ -658,6 +661,19 @@
 
       return;
 
+    }
+
+
+    if (message.type === "moderation-clear") {
+      const now = Date.now();
+      if (now - lastModerationClear < MODERATION_CLEAR_COOLDOWN_MS) {
+        warn("Moderation clear ignored (cooldown).");
+        return;
+      }
+      lastModerationClear = now;
+      log("MODERATION CLEAR:", message.reason || "no reason given");
+      clearCanvas();
+      return;
     }
 
 

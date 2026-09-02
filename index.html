@@ -63,56 +63,29 @@
         font-size: 40px;
         z-index: 100;
     }
-    #color-picker {
+    #moderation-clear-btn {
         position: fixed;
-        bottom: 48px;
-        left: 12px;
+        bottom: 16px;
+        right: 16px;
         z-index: 200;
-        width: 220px;
-        max-height: 180px;
-        overflow-y: auto;
-        background: rgba(0,0,0,0.75);
-        border-radius: 8px;
-        padding: 6px;
-        display: none;
-    }
-    #color-picker.open {
-        display: block;
-    }
-    #color-picker .swatch {
-        display: inline-block;
-        width: 18px;
-        height: 18px;
-        margin: 2px;
-        border-radius: 3px;
-        cursor: pointer;
-        border: 1px solid rgba(255,255,255,0.3);
-    }
-    #color-picker .swatch:hover {
-        transform: scale(1.3);
-    }
-    #color-toggle {
-        position: fixed;
-        bottom: 12px;
-        left: 12px;
-        z-index: 201;
-        padding: 8px 12px;
+        padding: 10px 16px;
         border: none;
         border-radius: 8px;
         background: #BA0C2F;
         color: #fff;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.6);
-        font-size: 13px;
+        font-size: 14px;
         font-weight: bold;
         cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    #moderation-clear-btn:active {
+        transform: scale(0.96);
     }
 </style>
 <canvas id=canvas></canvas>
-<button id="color-toggle">Colors</button>
-<div id="color-picker"></div>
+<button id="moderation-clear-btn">Clear All</button>
 <script src=pubnub.js></script>
 <script src=pixels.js></script>
-<script src=colors.js></script>
 <script src="respect-notice.js"></script>
 <script>
     //DO NOT EDIT
@@ -486,63 +459,9 @@
         body.style.backgroundColor = 'transparent';
     }
 
-    const colorToggle = document.getElementById('color-toggle');
-    const colorPicker = document.getElementById('color-picker');
-    colorToggle.style.background = defaultStyle;
-
-    if (isOverlayMode) {
-        colorToggle.style.display = 'none';
-        colorPicker.style.display = 'none';
-    }
-
     function setColor(hex) {
         activeStyle = hex;
-        colorToggle.style.background = hex;
     }
-
-    colorToggle.addEventListener('click', (event) => {
-        event.stopPropagation();
-        colorPicker.classList.toggle('open');
-    });
-    colorPicker.addEventListener('click', (event) => event.stopPropagation());
-    if (typeof COLORS !== 'undefined') {
-        COLORS.forEach(([name, hex]) => {
-            const swatch = document.createElement('div');
-            swatch.className = 'swatch';
-            swatch.style.background = hex;
-            swatch.title = name;
-            swatch.addEventListener('click', (event) => {
-                event.stopPropagation();
-                setColor(hex);
-                colorPicker.classList.remove('open');
-            });
-            colorPicker.appendChild(swatch);
-        });
-    }
-
-    // Secret URL: change the canvas color for everyone on the shared canvas.
-    // Usage: ?secret=YOUR_SECRET&color=%23ff0000
-    const SECRET_URL_KEY = 'domf-secret';
-    const secretParam = urlParams.get('secret');
-    const colorParam = urlParams.get('color');
-    if (secretParam === SECRET_URL_KEY && colorParam && /^#[0-9a-fA-F]{6}$/.test(colorParam)) {
-        activeStyle = colorParam;
-        colorToggle.style.background = colorParam;
-        pubnub.publish({
-            channel: channels.commands,
-            message: { type: 'setColor', color: colorParam },
-        });
-    }
-
-    pubnub.subscribe({
-        channel: channels.commands,
-        messages: (message) => {
-            if (message && message.type === 'setColor' && typeof message.color === 'string') {
-                activeStyle = message.color;
-                colorToggle.style.background = message.color;
-            }
-        },
-    });
 
     function resizeCanvas() {
       screenWidth = window.innerWidth;
@@ -602,6 +521,18 @@
     }, 1000 );
     // Clear screen of Stickers
 
+    document.getElementById('moderation-clear-btn').addEventListener('click', () => {
+        pubnub.publish({
+            channel: 'pixels',
+            message: {
+                type: 'moderation-clear',
+                reason: 'moderator requested clear',
+                userId: userId,
+                ts: Date.now(),
+            },
+        });
+    });
+
     // Prevent mobile scroll
     body.addEventListener('touchmove', (event) => {
         event.preventDefault();
@@ -611,11 +542,9 @@
     let pendingPoint = null;
     window.addEventListener('pointermove', (event) => {
         event.preventDefault();
-        if (event.target.closest && event.target.closest('#color-picker, #color-toggle')) return false;
         pendingPoint = {
             x: event.clientX / screenWidth,
             y: event.clientY / screenHeight,
-            style: activeStyle,
         };
         return false;
     });
@@ -628,7 +557,7 @@
             x: pendingPoint.x,
             y: pendingPoint.y,
             userId: userId,
-            style: pendingPoint.style,
+            style: activeStyle,
             seq: sendSeq,
         };
         pendingPoint = null;
