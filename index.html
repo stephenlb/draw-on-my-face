@@ -63,57 +63,11 @@
         font-size: 40px;
         z-index: 100;
     }
-    #color-picker {
-        position: fixed;
-        bottom: 48px;
-        left: 12px;
-        z-index: 200;
-        width: 220px;
-        max-height: 180px;
-        overflow-y: auto;
-        background: rgba(0,0,0,0.75);
-        border-radius: 8px;
-        padding: 6px;
-        display: none;
-    }
-    #color-picker.open {
-        display: block;
-    }
-    #color-picker .swatch {
-        display: inline-block;
-        width: 18px;
-        height: 18px;
-        margin: 2px;
-        border-radius: 3px;
-        cursor: pointer;
-        border: 1px solid rgba(255,255,255,0.3);
-    }
-    #color-picker .swatch:hover {
-        transform: scale(1.3);
-    }
-    #color-toggle {
-        position: fixed;
-        bottom: 12px;
-        left: 12px;
-        z-index: 201;
-        padding: 8px 12px;
-        border: none;
-        border-radius: 8px;
-        background: #BA0C2F;
-        color: #fff;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.6);
-        font-size: 13px;
-        font-weight: bold;
-        cursor: pointer;
-    }
 </style>
 <canvas id=canvas></canvas>
-<button id="color-toggle">Colors</button>
-<div id="color-picker"></div>
 <script src=pubnub.js></script>
 <script src=pixels.js></script>
 <script src="respect-notice.js"></script>
-<script src=colors.js></script>
 <script>
     //DO NOT EDIT
     //CHANGES BY QUICKFIX (hackertyper2311) ARE ALLOWED
@@ -486,47 +440,19 @@
         body.style.backgroundColor = 'transparent';
     }
 
-    const colorToggle = document.getElementById('color-toggle');
-    const colorPicker = document.getElementById('color-picker');
-    colorToggle.style.background = defaultStyle;
-
-    if (isOverlayMode) {
-        colorToggle.style.display = 'none';
-        colorPicker.style.display = 'none';
-    }
-
     function setColor(hex) {
         activeStyle = hex;
-        colorToggle.style.background = hex;
     }
 
-    colorToggle.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (typeof COLORS === 'undefined') return;
-        colorPicker.classList.toggle('open');
-    });
-    colorPicker.addEventListener('click', (event) => event.stopPropagation());
-    colorPicker.addEventListener('touchmove', (event) => event.stopPropagation(), { passive: true });
-    document.addEventListener('click', (event) => {
-        if (colorPicker.classList.contains('open') &&
-            !(event.target.closest && event.target.closest('#color-picker, #color-toggle'))) {
-            colorPicker.classList.remove('open');
+    // Canonical draw-colour API. activeStyle remains private to the draw engine;
+    // Canvas Lite and any future controls change/read it only through these
+    // accessors so mouse/finger drawing and structured output cannot drift.
+    window.DrawOnMyFace = Object.assign(window.DrawOnMyFace || {}, {
+        setDrawColor: setColor,
+        getDrawColor() {
+            return activeStyle;
         }
     });
-    if (typeof COLORS !== 'undefined') {
-        COLORS.forEach(([name, hex]) => {
-            const swatch = document.createElement('div');
-            swatch.className = 'swatch';
-            swatch.style.background = hex;
-            swatch.title = name;
-            swatch.addEventListener('click', (event) => {
-                event.stopPropagation();
-                setColor(hex);
-                colorPicker.classList.remove('open');
-            });
-            colorPicker.appendChild(swatch);
-        });
-    }
 
     function resizeCanvas() {
       screenWidth = window.innerWidth;
@@ -595,14 +521,9 @@
     let pendingPoint = null;
     window.addEventListener('pointermove', (event) => {
         event.preventDefault();
-        if (event.target.closest && event.target.closest('#color-picker, #color-toggle')) {
-            pendingPoint = null;
-            return false;
-        }
         pendingPoint = {
             x: event.clientX / screenWidth,
             y: event.clientY / screenHeight,
-            style: activeStyle,
         };
         return false;
     });
@@ -615,7 +536,7 @@
             x: pendingPoint.x,
             y: pendingPoint.y,
             userId: userId,
-            style: pendingPoint.style,
+            style: activeStyle,
             seq: sendSeq,
         };
         pendingPoint = null;
@@ -730,3 +651,4 @@
         navigator.serviceWorker.register('sw.js');
     }
 })();</script>
+<script src="DOF-CANVAS-LITE-v0.2.0-R3.js"></script>
