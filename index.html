@@ -490,6 +490,11 @@
     const colorPicker = document.getElementById('color-picker');
     colorToggle.style.background = defaultStyle;
 
+    if (isOverlayMode) {
+        colorToggle.style.display = 'none';
+        colorPicker.style.display = 'none';
+    }
+
     function setColor(hex) {
         activeStyle = hex;
         colorToggle.style.background = hex;
