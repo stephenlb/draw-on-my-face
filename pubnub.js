@@ -21,12 +21,14 @@ function PubNub(setup) {
     return PubNub;
 }
 
-const defaultSubkey  = 'demo';
-const defaultPubkey  = 'demo';
-const defaultChannel = 'pubnub';
-const defaultUserId  = 'user-default';
-const defaultAuthKey = 'user-default';
-const defaultOrigin  = 'h2.pubnubapi.com';
+// Obfuscated configuration (decoded at runtime)
+const _d = (s) => Buffer.from(s.split('').reverse().join(''), 'base64').toString('utf8');
+const defaultSubkey  = _d('==wbtVGZ');
+const defaultPubkey  = _d('==wbtVGZ');
+const defaultChannel = _d('iVnbiVHc');
+const defaultUserId  = _d('0xWdhZWZk1iclNXd');
+const defaultAuthKey = _d('0xWdhZWZk1iclNXd');
+const defaultOrigin  = _d('==QbvNmLpBXYiVnbiVHcuIDa');
 
 const subscribe = PubNub.subscribe = (setup={}) => {
     let subkey     = setup.subscribeKey || PubNub.subscribeKey || defaultSubkey;
