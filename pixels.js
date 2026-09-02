@@ -63,8 +63,6 @@
   const MAX_COMMAND_AGE_MS =
     30 * 1000;
 
-  const MODERATION_CLEAR_COOLDOWN_MS =
-    5 * 1000;
 
   /*
    * Nonces already processed by this page.
@@ -90,8 +88,6 @@
   let pendingPixels = [];
 
   let pixelSeq = 0;
-
-  let lastModerationClear = 0;
 
 
   // ============================================================
@@ -661,19 +657,6 @@
 
       return;
 
-    }
-
-
-    if (message.type === "moderation-clear") {
-      const now = Date.now();
-      if (now - lastModerationClear < MODERATION_CLEAR_COOLDOWN_MS) {
-        warn("Moderation clear ignored (cooldown).");
-        return;
-      }
-      lastModerationClear = now;
-      log("MODERATION CLEAR:", message.reason || "no reason given");
-      clearCanvas();
-      return;
     }
 
 

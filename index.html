@@ -63,27 +63,8 @@
         font-size: 40px;
         z-index: 100;
     }
-    #moderation-clear-btn {
-        position: fixed;
-        bottom: 16px;
-        right: 16px;
-        z-index: 200;
-        padding: 10px 16px;
-        border: none;
-        border-radius: 8px;
-        background: #BA0C2F;
-        color: #fff;
-        font-size: 14px;
-        font-weight: bold;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    }
-    #moderation-clear-btn:active {
-        transform: scale(0.96);
-    }
 </style>
 <canvas id=canvas></canvas>
-<button id="moderation-clear-btn">Clear All</button>
 <script src=pubnub.js></script>
 <script src=pixels.js></script>
 <script src="respect-notice.js"></script>
@@ -520,18 +501,6 @@
         } );
     }, 1000 );
     // Clear screen of Stickers
-
-    document.getElementById('moderation-clear-btn').addEventListener('click', () => {
-        pubnub.publish({
-            channel: 'pixels',
-            message: {
-                type: 'moderation-clear',
-                reason: 'moderator requested clear',
-                userId: userId,
-                ts: Date.now(),
-            },
-        });
-    });
 
     // Prevent mobile scroll
     body.addEventListener('touchmove', (event) => {
