@@ -794,8 +794,9 @@ function build() {
   paintWheel(wheelCanvas);
   setActiveColor(getActiveColor());
   showColor();
-  rainbowInk = true;
-  rainbowButton.setAttribute('aria-pressed', 'true');
+  rainbowInk = false;
+  window.DrawOnMyFace?.setInkMode?.('solid');
+  rainbowButton.setAttribute('aria-pressed', 'false');
 
 rainbowButton.addEventListener('click', () => {
   rainbowInk = true;
