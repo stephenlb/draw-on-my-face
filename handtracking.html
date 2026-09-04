@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pinch Draw</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
+    font-family: Arial, sans-serif;
+}
+
+#stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+#video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+}
+
+#canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+#cursor {
+    position: absolute;
+    width: 25px;
+    height: 25px;
+    border: 3px solid white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    pointer-events: none;
+    z-index: 5;
+}
+
+#controls {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 10;
+}
+
+button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    background: rgba(0,0,0,.75);
+    color: white;
+    cursor: pointer;
+}
+
+input[type="color"] {
+    width: 45px;
+    height: 40px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+}
+
+input[type="range"] {
+    width: 120px;
+}
+
+#status {
+    position: absolute;
+    left: 15px;
+    bottom: 15px;
+    padding: 10px 15px;
+    border-radius: 8px;
+    background: rgba(0,0,0,.75);
+    color: white;
+    z-index: 10;
+}
+
+#pinch {
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    padding: 10px 15px;
+    border-radius: 8px;
+    background: rgba(0,0,0,.75);
+    color: white;
+    z-index: 10;
+}
+
+#pinch.active {
+    background: #159447;
+}
+</style>
+</head>
+
+<body>
+
+<div id="stage">
+
+    <video id="video" autoplay muted playsinline></video>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="cursor"></div>
+
+    <div id="controls">
+        <button id="clear">Clear</button>
+
+        <input
+            id="color"
+            type="color"
+            value="#ff0000"
+        >
+
+        <input
+            id="size"
+            type="range"
+            min="2"
+            max="50"
+            value="8"
+        >
+    </div>
+
+    <div id="pinch">
+        PINCH: OFF
+    </div>
+
+    <div id="status">
+        Starting camera...
+    </div>
+
+</div>
+
+
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<!-- PubNub -->
+<script src="pubnub.js"></script>
+
+
+<script>
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const cursor = document.getElementById("cursor");
+
+const status = document.getElementById("status");
+const pinchStatus = document.getElementById("pinch");
+
+const clearButton = document.getElementById("clear");
+const color = document.getElementById("color");
+const size = document.getElementById("size");
+
+let lastX = null;
+let lastY = null;
+
+
+/* =========================
+   PUBNUB
+========================= */
+
+/*
+    index.html subscribes to the
+    "coords" channel and expects:
+
+    {
+        x: 0..1,
+        y: 0..1,
+        userId: string,
+        style: "#rrggbb",
+        seq: number
+    }
+*/
+
+const pubnub = PubNub({});
+
+const channels = {
+    coords: "coords"
+};
+
+const userId =
+    `userId-${ crypto.randomUUID() }`;
+
+let sendSeq = 0;
+
+let pendingPoint = null;
+
+
+function queuePoint(normalizedX, normalizedY) {
+
+    pendingPoint = {
+        x: normalizedX,
+        y: normalizedY
+    };
+
+}
+
+
+function publishPendingPoint() {
+
+    if (!pendingPoint) {
+        return;
+    }
+
+    sendSeq++;
+
+    const message = {
+        x: pendingPoint.x,
+        y: pendingPoint.y,
+        userId: userId,
+        style: color.value,
+        seq: sendSeq
+    };
+
+    pendingPoint = null;
+
+    pubnub.publish({
+        channel: channels.coords,
+        message: message
+    });
+
+}
+
+
+/*
+    Publish at most once per frame so
+    fast hand motion cannot flood the
+    channel.
+*/
+
+function publishLoop() {
+
+    requestAnimationFrame(publishLoop);
+
+    publishPendingPoint();
+
+}
+
+requestAnimationFrame(publishLoop);
+
+
+/* =========================
+   CANVAS
+========================= */
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+resizeCanvas();
+
+
+/* =========================
+   CLEAR
+========================= */
+
+clearButton.addEventListener("click", () => {
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    lastX = null;
+    lastY = null;
+});
+
+
+/* =========================
+   DRAW
+========================= */
+
+function drawLine(x, y) {
+
+    ctx.strokeStyle = color.value;
+    ctx.lineWidth = Number(size.value);
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (lastX === null) {
+
+        lastX = x;
+        lastY = y;
+
+        return;
+    }
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+        lastX,
+        lastY
+    );
+
+    ctx.lineTo(
+        x,
+        y
+    );
+
+    ctx.stroke();
+
+    lastX = x;
+    lastY = y;
+}
+
+
+/* =========================
+   MEDIAPIPE
+========================= */
+
+const hands = new Hands({
+
+    locateFile: file => {
+
+        return (
+            "https://cdn.jsdelivr.net/npm/" +
+            "@mediapipe/hands/" +
+            file
+        );
+
+    }
+
+});
+
+
+hands.setOptions({
+
+    maxNumHands: 1,
+
+    modelComplexity: 1,
+
+    minDetectionConfidence: 0.6,
+
+    minTrackingConfidence: 0.6
+
+});
+
+
+/* =========================
+   HAND RESULTS
+========================= */
+
+hands.onResults(results => {
+
+    /* No hand */
+
+    if (
+        !results.multiHandLandmarks ||
+        results.multiHandLandmarks.length === 0
+    ) {
+
+        cursor.style.display = "none";
+
+        pinchStatus.textContent =
+            "PINCH: OFF";
+
+        pinchStatus.classList.remove(
+            "active"
+        );
+
+        status.textContent =
+            "No hand detected";
+
+        lastX = null;
+        lastY = null;
+
+        pendingPoint = null;
+
+        return;
+    }
+
+
+    const landmarks =
+        results.multiHandLandmarks[0];
+
+
+    /*
+        MediaPipe landmarks:
+
+        4 = thumb tip
+        8 = index finger tip
+    */
+
+    const thumb = landmarks[4];
+    const index = landmarks[8];
+
+
+    /* =========================
+       PINCH DETECTION
+    ========================= */
+
+    const dx =
+        thumb.x - index.x;
+
+    const dy =
+        thumb.y - index.y;
+
+    const distance =
+        Math.sqrt(
+            dx * dx +
+            dy * dy
+        );
+
+
+    /*
+        Lower = harder to activate
+
+        Higher = easier to activate
+    */
+
+    const PINCH_THRESHOLD = 0.055;
+
+
+    const pinching =
+        distance < PINCH_THRESHOLD;
+
+
+    /* =========================
+       FINGER POSITION
+    ========================= */
+
+    /*
+        Camera is mirrored,
+        so reverse X.
+    */
+
+    const x =
+        (1 - index.x) *
+        canvas.width;
+
+    const y =
+        index.y *
+        canvas.height;
+
+
+    /* =========================
+       CURSOR
+    ========================= */
+
+    cursor.style.display = "block";
+
+    cursor.style.left =
+        x + "px";
+
+    cursor.style.top =
+        y + "px";
+
+
+    /* =========================
+       DRAWING
+    ========================= */
+
+    if (pinching) {
+
+        pinchStatus.textContent =
+            "PINCH: DRAWING";
+
+        pinchStatus.classList.add(
+            "active"
+        );
+
+        status.textContent =
+            "Drawing";
+
+        drawLine(
+            x,
+            y
+        );
+
+        /* Share with index.html viewers */
+
+        queuePoint(
+            (1 - index.x),
+            index.y
+        );
+
+    } else {
+
+        pinchStatus.textContent =
+            "PINCH: OFF";
+
+        pinchStatus.classList.remove(
+            "active"
+        );
+
+        status.textContent =
+            "Pinch thumb + index to draw";
+
+        lastX = null;
+        lastY = null;
+
+        pendingPoint = null;
+    }
+
+});
+
+
+/* =========================
+   CAMERA
+========================= */
+
+const camera = new Camera(
+    video,
+    {
+
+        onFrame: async () => {
+
+            await hands.send({
+                image: video
+            });
+
+        },
+
+        width: 1280,
+        height: 720
+
+    }
+);
+
+
+/* =========================
+   START
+========================= */
+
+async function startCamera() {
+
+    try {
+
+        await navigator.mediaDevices.getUserMedia({
+
+            video: true,
+            audio: false
+
+        });
+
+        camera.start();
+
+        status.textContent =
+            "Camera ready — pinch thumb + index";
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.textContent =
+            "Camera permission denied";
+
+    }
+
+}
+
+startCamera();
+
+</script>
+
+</body>
+</html>
