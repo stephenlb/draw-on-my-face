@@ -36,6 +36,7 @@ const SAMPLE_WIDTH = 96;
 const SAMPLE_HEIGHT = 72;
 const PEN_UP_STYLE = 'rgba(0,0,0,0)';
 
+
 const BLOCKED_TERMS = [
   'fuck','shit','cunt','bitch','bastard','wanker','bollock','wank',
   'nigger','nigga','faggot','retard','tranny','paki','spic','chink','kike',
@@ -149,6 +150,8 @@ let pubnub = null;
 let seq = 0;
 let activeController = null;
 let fallbackColor = '#ff2d55';
+let rainbowInk = false;
+let rainbowHue = 0;
 let wheelCanvas = null;
 let statusEl = null;
 let samplerCanvas = null;
@@ -367,7 +370,7 @@ async function emitPoint(context, x, y, style, userId) {
   const delay = context.nextSendAt - performance.now();
   if (delay > 0) await sleep(delay, context.signal);
   assertRun(context);
-  sendPoint(x, y, style, userId);
+  sendPoint(x, y, resolveInkStyle(style), userId);
   context.nextSendAt = performance.now() + SEND_INTERVAL_MS;
 }
 
@@ -623,7 +626,17 @@ function hslToHex(h, s, l) {
   };
   return `#${channel(0)}${channel(8)}${channel(4)}`;
 }
+function resolveInkStyle(style) {
+  if (style === PEN_UP_STYLE) return style;
+  const api = window.DrawOnMyFace;
+  if (api && typeof api.nextInkStyle === 'function') return api.nextInkStyle(style);
+  if (!rainbowInk) return style;
 
+  const color = hslToHex(rainbowHue, 1, 0.5);
+  rainbowHue = (rainbowHue + 18) % 360;
+
+  return color;
+}
 function paintWheel(canvas) {
   const context = canvas.getContext('2d');
   const radius = canvas.width / 2;
@@ -712,6 +725,27 @@ function build() {
       button.stop{background:#3a1b1b;border-color:#5c2a2a}
       button.min{flex:0 0 auto;min-width:0;width:18px;height:18px;padding:0;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;border-radius:4px}
       .wheelwrap{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+      .color-column{
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        gap:6px
+      }
+
+      button.rainbow{
+        flex:0 0 auto;
+        min-width:0;
+        width:30px;
+        height:30px;
+        padding:0;
+        border-radius:6px;
+        border:1px solid #3a4658;
+        background:conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);
+      }
+      button.rainbow[aria-pressed="true"]{outline:2px solid #e8edf5;outline-offset:2px}
+
+
       #wheel{cursor:crosshair;border-radius:50%;display:block;touch-action:none}
       .preview{width:30px;height:30px;border-radius:6px;border:1px solid #3a4658;flex:0 0 auto}
       .hex{font-size:10px;opacity:.6;letter-spacing:.06em}
@@ -723,7 +757,12 @@ function build() {
       <div class="title"><span>CANVAS LITE</span><span class="title-tools"><small>${VERSION}</small><button type="button" class="min" id="minBtn" title="Minimize" aria-label="Minimize panel">−</button></span></div>
       <div id="panelBody">
         <div class="label">Color</div>
-        <div class="wheelwrap"><canvas id="wheel" width="${WHEEL_SIZE}" height="${WHEEL_SIZE}"></canvas><div><div class="preview" id="preview"></div><div class="hex" id="hex"></div></div></div>
+        <div class="wheelwrap"><canvas id="wheel" width="${WHEEL_SIZE}" height="${WHEEL_SIZE}"></canvas>
+        <div class="color-column"><button type="button" class="rainbow" id="rainbow" title="Rainbow ink" aria-label="Rainbow ink"></button>
+        <div class="preview" id="preview"></div>
+        <div class="hex" id="hex"></div>
+      </div>
+    </div>
         <div class="label">Shapes</div>
         <div class="row"><button data-shape="heart">Heart</button><button data-shape="star">Star</button><button data-shape="circle">Circle</button><button data-shape="triangle">Triangle</button><button data-shape="square">Square</button><button data-shape="spiral">Spiral</button></div>
         <div class="label">Animate</div>
@@ -740,8 +779,9 @@ function build() {
 
   wheelCanvas = root.getElementById('wheel');
   statusEl = root.getElementById('status');
+  const rainbowButton = root.getElementById('rainbow');
   const preview = root.getElementById('preview');
-  const hex = root.getElementById('hex');
+  const hex = root.getElementById('hex');  
   const panelBody = root.getElementById('panelBody');
   const minButton = root.getElementById('minBtn');
   const textInput = root.getElementById('txt');
@@ -754,13 +794,27 @@ function build() {
   paintWheel(wheelCanvas);
   setActiveColor(getActiveColor());
   showColor();
+  rainbowInk = true;
+  rainbowButton.setAttribute('aria-pressed', 'true');
 
-  wheelCanvas.addEventListener('pointerdown', event => {
-    const color = pickFromWheel(wheelCanvas, event);
-    if (!color) return;
-    setActiveColor(color);
-    showColor();
-  });
+rainbowButton.addEventListener('click', () => {
+  rainbowInk = true;
+  rainbowHue = 0;
+  window.DrawOnMyFace?.setInkMode?.('rainbow');
+  rainbowButton.setAttribute('aria-pressed', 'true');
+});
+
+wheelCanvas.addEventListener('pointerdown', event => {
+  const color = pickFromWheel(wheelCanvas, event);
+  if (!color) return;
+
+  rainbowInk = false;
+  window.DrawOnMyFace?.setInkMode?.('solid');
+  rainbowButton.setAttribute('aria-pressed', 'false');
+
+  setActiveColor(color);
+  showColor();
+});
 
   minButton.addEventListener('click', () => {
     panelBody.hidden = !panelBody.hidden;
