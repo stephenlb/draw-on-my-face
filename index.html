@@ -66,7 +66,7 @@
 </style>
 <canvas id=canvas></canvas>
 <script src=pubnub.js></script>
-<!-- <script src=pixels.js></script> -->
+<script src=pixels.js></script>
 <script src="respect-notice.js"></script>
 <script>
     //DO NOT EDIT
@@ -414,24 +414,20 @@
     const pointLifetimeMS = 5000;
     const userId = `userId-${ crypto.randomUUID() }`; // Thank you Bettlee 🎉
     const defaultStyle = "#FF00FF";
-    const penUpStyle = 'rgba(0,0,0,0)';
     let activeStyle = defaultStyle;
     var sendSeq = 0;
     const rainbowHueStep = 140;
     const rainbowMovePx = 10;
     const rainbowPointsPerColour = 1;
-    const thicknessTracks = 6;
-    const overlapPx = 0;
+    const strokeWidthSteps = 6;
     const receiverLineWidthPx = 3;
+    const maxStrokeWidthPx = strokeWidthSteps * receiverLineWidthPx;
     let rainbowMode = true;
     let rainbowHue = 0;
     let rainbowPointCounter = 0;
     let rainbowDistanceCarryPx = 0;
     let pointerIsDown = false;
     let lastPublishedPoint = null;
-    let lastNormalX = 0;
-    let lastNormalY = 1;
-    let activeTrackCount = 0;
 
     let screenWidth = 0;
     let screenHeight = 0;
@@ -504,40 +500,22 @@
         return hslToHex(rainbowHue, 1, 0.5);
     }
 
-    function parallelPoints(point, previousPoint) {
-        const pressure = point.pressure > 0 ? point.pressure : 1;
-        const tracks = Math.max(1, Math.min(thicknessTracks, Math.round(1 + pressure * (thicknessTracks - 1))));
-        if (tracks === 1) return [point];
-        if (previousPoint) {
-            const dx = (point.x - previousPoint.x) * Math.max(1, screenWidth);
-            const dy = (point.y - previousPoint.y) * Math.max(1, screenHeight);
-            const length = Math.hypot(dx, dy);
-            if (length > 0.001) {
-                lastNormalX = -dy / length;
-                lastNormalY = dx / length;
-            }
-        }
-        const spacing = Math.max(0.25, receiverLineWidthPx - overlapPx);
-        const centre = (tracks - 1) / 2;
-        const points = [];
-        for (let index = 0; index < tracks; index++) {
-            const offsetPx = (index - centre) * spacing;
-            points.push({
-                x: point.x + lastNormalX * offsetPx / Math.max(1, screenWidth),
-                y: point.y + lastNormalY * offsetPx / Math.max(1, screenHeight),
-            });
-        }
-        return points;
+    function strokeWidthForPressure(pressure) {
+        const normalizedPressure = pressure > 0 ? pressure : 1;
+        const widthStep = Math.max(1, Math.min(strokeWidthSteps, Math.round(1 + normalizedPressure * (strokeWidthSteps - 1))));
+        return widthStep * receiverLineWidthPx;
     }
 
-    function publishFreehandPoint(point, style, trackIndex) {
+    function publishFreehandPoint(point, style, width, start) {
         pubnub.publish({
             channel: channels.coords,
             message: {
                 x: Math.max(0, Math.min(1, point.x)),
                 y: Math.max(0, Math.min(1, point.y)),
-                userId: trackIndex === 0 ? userId : `${userId}~ink${trackIndex}`,
+                userId,
                 style,
+                width,
+                start,
                 seq: ++sendSeq,
             },
         });
@@ -624,23 +602,18 @@
         pointerIsDown = true;
         lastPublishedPoint = null;
         rainbowDistanceCarryPx = 0;
-        lastNormalX = 0;
-        lastNormalY = 1;
-        activeTrackCount = 0;
     });
     window.addEventListener('pointerup', () => {
         pointerIsDown = false;
         pendingPoint = null;
         lastPublishedPoint = null;
         rainbowDistanceCarryPx = 0;
-        activeTrackCount = 0;
     });
     window.addEventListener('pointercancel', () => {
         pointerIsDown = false;
         pendingPoint = null;
         lastPublishedPoint = null;
         rainbowDistanceCarryPx = 0;
-        activeTrackCount = 0;
     });
     window.addEventListener('pointermove', (event) => {
         event.preventDefault();
@@ -663,12 +636,8 @@
         const point = pendingPoint;
         pendingPoint = null;
         const style = freehandInkStyle(point, lastPublishedPoint);
-        const points = parallelPoints(point, lastPublishedPoint);
-        points.forEach((parallelPoint, index) => {
-            if (index >= activeTrackCount) publishFreehandPoint(parallelPoint, penUpStyle, index);
-            publishFreehandPoint(parallelPoint, style, index);
-        });
-        activeTrackCount = points.length;
+        const width = strokeWidthForPressure(point.pressure);
+        publishFreehandPoint(point, style, width, lastPublishedPoint === null);
         lastPublishedPoint = point;
     }
 
@@ -683,22 +652,79 @@
         if (typeof message.y != 'number') return;
 
         const id = message.userId;
-        if (!(id in userTracks)) userTracks[id] = { points: [], paths: [] };
+        if (!(id in userTracks)) {
+            userTracks[id] = {
+                points: [],
+                paths: [],
+                legacySeqCount: 0,
+                seqOrdered: true,
+                expiryTimer: null,
+                expiryAt: 0,
+            };
+        }
         const track = userTracks[id];
         message.expires = Date.now() + pointLifetimeMS;
+
+        if (typeof message.seq !== 'number') {
+            track.legacySeqCount++;
+            track.seqOrdered = false;
+        }
         track.points.push(message);
 
-        // Backwards compatibility for versions before seq was added
-        const allHaveSeq = track.points.every(point => typeof point.seq === 'number');
-        if (allHaveSeq) {
-            track.points.sort((a, b) => a.seq - b.seq);
+        // Backwards compatibility for versions before seq was added.
+        // Avoid sorting the common in-order path unless ordering actually changed.
+        let reordered = false;
+        if (track.legacySeqCount === 0) {
+            const previous = track.points[track.points.length - 2];
+            if (!track.seqOrdered || (previous && previous.seq > message.seq)) {
+                track.points.sort((a, b) => a.seq - b.seq);
+                track.seqOrdered = true;
+                reordered = true;
+            }
         }
 
-        // Truncate to maxTrackPoints points only
-        if (track.points.length > maxTrackPoints) track.points.shift();
+        // Truncate to maxTrackPoints points only.
+        let truncated = false;
+        if (track.points.length > maxTrackPoints) {
+            const removed = track.points.shift();
+            if (typeof removed.seq !== 'number') track.legacySeqCount--;
+            truncated = true;
+        }
 
-        rebuildPaths(track);
+        if (reordered || truncated) rebuildPaths(track);
+        else appendPathPoint(track, message);
+        scheduleTrackExpiry(id, track);
         dirty = true;
+    }
+
+    function pointWidth(point) {
+        return Number.isFinite(point.width)
+            ? Math.max(receiverLineWidthPx, Math.min(maxStrokeWidthPx, point.width))
+            : receiverLineWidthPx;
+    }
+
+    function appendPathPoint(track, point) {
+        const points = track.points;
+        const paths = track.paths;
+        const x = point.x * screenWidth;
+        const y = point.y * screenHeight;
+        const pointStyle = point.style || defaultStyle;
+        const width = pointWidth(point);
+        const previous = points.length > 1 ? points[points.length - 2] : null;
+        let entry = paths.length ? paths[paths.length - 1] : null;
+
+        if (!entry || point.start || entry.style !== pointStyle || entry.width !== width) {
+            const path = new Path2D();
+            if (!previous || point.start) {
+                path.moveTo(x, y);
+            } else {
+                path.moveTo(previous.x * screenWidth, previous.y * screenHeight);
+            }
+            entry = { style: pointStyle, width: width, path: path };
+            paths.push(entry);
+        }
+
+        entry.path.lineTo(x, y);
     }
 
     function rebuildPaths(track) {
@@ -709,6 +735,7 @@
 
         let path = null;
         let style = null;
+        let width = receiverLineWidthPx;
         let previousX = 0;
         let previousY = 0;
 
@@ -716,12 +743,14 @@
             const x = point.x * screenWidth;
             const y = point.y * screenHeight;
             const pointStyle = point.style || defaultStyle;
+            const widthValue = pointWidth(point);
 
-            if (pointStyle !== style) {
-                const first = path === null;
+            if (point.start || pointStyle !== style || widthValue !== width) {
+                const first = path === null || point.start;
                 style = pointStyle;
+                width = widthValue;
                 path = new Path2D();
-                paths.push({ style: style, path: path });
+                paths.push({ style: style, width: width, path: path });
                 path.moveTo(first ? x : previousX, first ? y : previousY);
             }
 
@@ -731,33 +760,52 @@
         } );
     }
 
-    // Drop line segments older than pointLifetimeMS
-    function expirePoints() {
+    function scheduleTrackExpiry(id, track) {
+        const nextExpiry = track.points.length ? track.points[0].expires : 0;
+        if (track.expiryTimer && track.expiryAt === nextExpiry) return;
+        if (track.expiryTimer) clearTimeout(track.expiryTimer);
+        track.expiryTimer = null;
+        track.expiryAt = nextExpiry;
+        if (!nextExpiry) return;
+
+        track.expiryTimer = setTimeout(() => {
+            track.expiryTimer = null;
+            expireTrack(id, track);
+        }, Math.max(0, nextExpiry - Date.now()));
+    }
+
+    // Drop line segments older than pointLifetimeMS only when this track is due.
+    function expireTrack(id, track) {
+        if (userTracks[id] !== track) return;
         const now = Date.now();
-        Object.keys(userTracks).forEach( id => {
-            const track = userTracks[id];
-            let expired = false;
-            while (track.points.length && track.points[0].expires <= now) {
-                track.points.shift();
-                expired = true;
+        let expired = false;
+        while (track.points.length && track.points[0].expires <= now) {
+            const removed = track.points.shift();
+            if (typeof removed.seq !== 'number') track.legacySeqCount--;
+            expired = true;
+        }
+
+        if (expired) {
+            if (track.points.length === 0) {
+                delete userTracks[id];
+            } else {
+                rebuildPaths(track);
             }
-            if (!expired) return;
-            rebuildPaths(track);
             dirty = true;
-        } );
+        }
+
+        if (id in userTracks) scheduleTrackExpiry(id, track);
     }
 
     function render() {
         requestAnimationFrame(render);
         publishPendingPoint();
-        expirePoints();
 
         if (!dirty) return;
         dirty = false;
 
         context.clearRect(0, 0, screenWidth, screenHeight);
 
-        context.lineWidth = 3;
         context.lineJoin = 'round';
         context.lineCap = 'round';
 
@@ -765,6 +813,7 @@
             const paths = userTracks[id].paths;
             for (let index = 0; index < paths.length; index++) {
                 context.strokeStyle = paths[index].style;
+                context.lineWidth = paths[index].width || receiverLineWidthPx;
                 context.stroke(paths[index].path);
             }
         } );
