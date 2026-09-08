@@ -38,7 +38,7 @@ const PEN_UP_STYLE = 'rgba(0,0,0,0)';
 
 
 const BLOCKED_TERMS = [
-  'fuck','shit','cunt','bitch','bastard','wanker','bollock','wank',
+  'fuck','shit','cunt','bitch','bastard','wanker','bollock','wank','dic','dik',
   'nigger','nigga','faggot','retard','tranny','paki','spic','chink','kike',
   'whore','slut','rape','porn','penis','vagina','boob','tit','anal','anus',
   'cock','dick','pussy','semen','cum','orgasm','masturbat','sex','horny',
