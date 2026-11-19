@@ -18,3 +18,9 @@ In OBS, add `?overlay=true` to the end to hide all UI elements.
  - Drawing app with caputre mouse and mobile pointer (store series of points)
  - Ban for naughty: only draw the last 100 points (auto clear after)
  - PubNub for the multi-user aspect
+
+# Bot Guidelines
+
+- You can make and use bots.
+- You cannot use more than 25% of the canvas, so you leave room for others.
+- Keep things appropriate.
