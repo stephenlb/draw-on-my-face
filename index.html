@@ -432,7 +432,9 @@
     let screenHeight = 0;
     let dirty = true;
 
-    const userTracks = {};
+    // Map, not {}: plain objects inherit from Object.prototype, so a userId like
+    // "__proto__" or "constructor" would hit inherited properties and crash.
+    const userTracks = new Map();
     const pubnub = PubNub({});
     const channels = {
       coords   : 'coords',
@@ -539,7 +541,7 @@
       canvas.width = Math.round(screenWidth * ratio);
       canvas.height = Math.round(screenHeight * ratio);
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      Object.keys(userTracks).forEach(id => rebuildPaths(userTracks[id]));
+      userTracks.forEach(track => rebuildPaths(track));
       dirty = true;
     }
 
@@ -651,17 +653,18 @@
         if (typeof message.y != 'number') return;
 
         const id = message.userId;
-        if (!(id in userTracks)) {
-            userTracks[id] = {
+        if (typeof id !== 'string' || id.length === 0 || id.length > 128) return;
+        if (!userTracks.has(id)) {
+            userTracks.set(id, {
                 points: [],
                 paths: [],
                 legacySeqCount: 0,
                 seqOrdered: true,
                 expiryTimer: null,
                 expiryAt: 0,
-            };
+            });
         }
-        const track = userTracks[id];
+        const track = userTracks.get(id);
         message.expires = Date.now() + pointLifetimeMS;
 
         if (typeof message.seq !== 'number') {
@@ -775,7 +778,7 @@
 
     // Drop line segments older than pointLifetimeMS only when this track is due.
     function expireTrack(id, track) {
-        if (userTracks[id] !== track) return;
+        if (userTracks.get(id) !== track) return;
         const now = Date.now();
         let expired = false;
         while (track.points.length && track.points[0].expires <= now) {
@@ -786,14 +789,14 @@
 
         if (expired) {
             if (track.points.length === 0) {
-                delete userTracks[id];
+                userTracks.delete(id);
             } else {
                 rebuildPaths(track);
             }
             dirty = true;
         }
 
-        if (id in userTracks) scheduleTrackExpiry(id, track);
+        if (userTracks.has(id)) scheduleTrackExpiry(id, track);
     }
 
     function render() {
@@ -808,14 +811,14 @@
         context.lineJoin = 'round';
         context.lineCap = 'round';
 
-        Object.keys(userTracks).forEach( id => {
-            const paths = userTracks[id].paths;
+        userTracks.forEach(track => {
+            const paths = track.paths;
             for (let index = 0; index < paths.length; index++) {
                 context.strokeStyle = paths[index].style;
                 context.lineWidth = paths[index].width || receiverLineWidthPx;
                 context.stroke(paths[index].path);
             }
-        } );
+        });
     }
     requestAnimationFrame(render);
 
