@@ -648,12 +648,52 @@
         messages: addUserTrack,
     });
 
+    // Per-client flood guard. A userId that sends too many messages in one
+    // window is ignored for a while. The table is bounded so the guard itself
+    // cannot be exhausted by a flood of random IDs.
+    const FLOOD_WINDOW_MS = 1000;
+    const FLOOD_MAX_MESSAGES = 150;
+    const FLOOD_BLOCK_MS = 30000;
+    const FLOOD_MAX_CLIENTS = 1000;
+    const clientRates = new Map();
+
+    function isFlooding(id, now) {
+        if (!clientRates.has(id)) {
+            if (clientRates.size >= FLOOD_MAX_CLIENTS) {
+                // Drop idle entries before giving up on a new client.
+                for (const [key, r] of clientRates) {
+                    if (now >= r.blockedUntil && now - r.windowStart >= FLOOD_WINDOW_MS) {
+                        clientRates.delete(key);
+                    }
+                }
+                if (clientRates.size >= FLOOD_MAX_CLIENTS) return true;
+            }
+            clientRates.set(id, { windowStart: now, count: 0, blockedUntil: 0 });
+        }
+        const rate = clientRates.get(id);
+        if (now < rate.blockedUntil) return true;
+
+        if (now - rate.windowStart >= FLOOD_WINDOW_MS) {
+            rate.windowStart = now;
+            rate.count = 0;
+        }
+        rate.count++;
+        if (rate.count > FLOOD_MAX_MESSAGES) {
+            rate.blockedUntil = now + FLOOD_BLOCK_MS;
+            rate.count = 0;
+            console.warn(`Ignoring client ${id} for ${FLOOD_BLOCK_MS / 1000}s: message flood`);
+            return true;
+        }
+        return false;
+    }
+
     function addUserTrack(message) {
         if (typeof message.x != 'number') return;
         if (typeof message.y != 'number') return;
 
         const id = message.userId;
         if (typeof id !== 'string' || id.length === 0 || id.length > 128) return;
+        if (isFlooding(id, Date.now())) return;
         if (!userTracks.has(id)) {
             userTracks.set(id, {
                 points: [],
